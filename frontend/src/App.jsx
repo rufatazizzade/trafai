@@ -9,7 +9,7 @@ import { APIProvider } from '@vis.gl/react-google-maps';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Replace with your actual API Key
-const API_KEY = 'AIzaSyAIgGT3GCutntPZzCKydw-dPArt-s3BdJg';
+const API_KEY = 'YOUR_API_KEY_HERE';
 
 function App() {
   const [routeData, setRouteData] = useState(null)
