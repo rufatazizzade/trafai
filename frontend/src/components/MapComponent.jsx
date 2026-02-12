@@ -1,117 +1,138 @@
+import { useEffect, useState, useMemo } from 'react';
+import { Map, useMap, Marker } from '@vis.gl/react-google-maps';
 
-import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
-import api from '../api'
+// Remove Map ID to avoid issues if the key doesn't support it
+// const MAP_ID = 'bf51a910020fa25a'; 
 
-// Simple component to fit map to bounds
-function MapBounds({ nodes }) {
+function MapBounds({ nodes, routeData }) {
     const map = useMap();
     useEffect(() => {
-        if (nodes && nodes.length > 0) {
-            const lats = nodes.map(n => n.y);
-            const lngs = nodes.map(n => n.x);
-            // Invert Y for mapping if needed, but assuming x=lng, y=lat or similar scaling
-            // Grid is small (0-4), so we might need to scale coordinates to real world or use simple CRS
-            // For simplicity, let's just center.
-            // Actually, (0,0) to (4, -4) is very small in LatLng. 
-            // We should scale them up or use "Simple" CRS.
-            // Using Simple CRS is better for grid, but TileLayer needs standard CRS.
-            // Let's multiply by 0.01 degree (~1km) for valid lat/lng separation.
+        if (!map) return;
+
+        try {
+            const bounds = new google.maps.LatLngBounds();
+            let hasPoints = false;
+
+            // Prioritize route bounds
+            if (routeData && routeData.geometry && Array.isArray(routeData.geometry)) {
+                routeData.geometry.forEach(pt => {
+                    if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+                        bounds.extend(pt);
+                        hasPoints = true;
+                    }
+                });
+            }
+
+            // Fallback to graph nodes
+            if (!hasPoints && nodes && Array.isArray(nodes) && nodes.length > 0) {
+                nodes.forEach(node => {
+                    if (node && typeof node.y === 'number' && typeof node.x === 'number') {
+                        bounds.extend({ lat: node.y, lng: node.x });
+                        hasPoints = true;
+                    }
+                });
+            }
+
+            if (hasPoints) {
+                console.log("Fitting bounds:", bounds);
+                map.fitBounds(bounds);
+            } else {
+                console.log("No points to fit bounds to.");
+            }
+        } catch (e) {
+            console.error("Error in MapBounds:", e);
         }
-    }, [nodes, map]);
+    }, [nodes, routeData, map]);
     return null;
 }
 
-const SCALE = 0.005; // Scale grid coordinates to lat/lng degrees approx 500m
-
-function ChangeView({ nodes }) {
+// Polyline component using Google Maps API
+function Polyline({ path, options }) {
     const map = useMap();
+    const [polyline, setPolyline] = useState(null);
+
     useEffect(() => {
-        if (nodes && nodes.length > 0) {
-            // Find bounds
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            nodes.forEach(n => {
-                if (n.x < minX) minX = n.x;
-                if (n.x > maxX) maxX = n.x;
-                if (n.y < minY) minY = n.y;
-                if (n.y > maxY) maxY = n.y;
-            });
-            // Convert to LatLng
-            // Center is (51.505, -0.09) per getLatLng logic below
-            const centerLat = 51.505;
-            const centerLng = -0.09;
+        if (!map) return;
 
-            const lat1 = centerLat + minY * SCALE;
-            const lng1 = centerLng + minX * SCALE;
-            const lat2 = centerLat + maxY * SCALE;
-            const lng2 = centerLng + maxX * SCALE;
+        const line = new google.maps.Polyline({
+            path,
+            ...options
+        });
 
-            map.fitBounds([[lat1, lng1], [lat2, lng2]], { padding: [50, 50] });
+        line.setMap(map);
+        setPolyline(line);
+
+        return () => {
+            line.setMap(null);
+        };
+    }, [map]);
+
+    useEffect(() => {
+        if (polyline) {
+            polyline.setPath(path);
+            polyline.setOptions(options);
         }
-    }, [nodes, map]);
+    }, [polyline, path, options]);
+
     return null;
 }
 
 export default function MapComponent({ graph, routeData }) {
-    // graph is passed from parent now
 
-    // Helper to convert grid pos to LatLng
-    const getLatLng = (x, y) => {
-        // Center at arbitrary location (e.g., London)
-        const centerLat = 51.505;
-        const centerLng = -0.09;
-        return [centerLat + y * SCALE, centerLng + x * SCALE];
-    };
-
-    const getNodePos = (id) => {
-        const n = graph.nodes.find(n => n.id === id);
-        return n ? getLatLng(n.x, n.y) : [0, 0];
-    };
+    // Default center (London)
+    const defaultCenter = { lat: 51.505, lng: -0.09 };
 
     return (
-        <MapContainer center={[51.505, -0.09]} zoom={15} style={{ height: '100%', width: '100%', background: '#0f172a' }}>
-            <ChangeView nodes={graph.nodes} />
-            <TileLayer
-                attribution='&copy; OpenStreetMap'
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            />
+        <div style={{ height: '100%', width: '100%' }}>
+            <Map
+                defaultCenter={defaultCenter}
+                defaultZoom={13}
+                // mapId={MAP_ID} // Removed to prevent crashes with AdvancedMarkers
+                style={{ width: '100%', height: '100%' }}
+                options={{
+                    disableDefaultUI: false,
+                    zoomControl: true,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: false,
+                }}
+            >
+                <MapBounds nodes={graph.nodes} routeData={routeData} />
 
-            {/* Draw Network Edges */}
-            {graph.edges.map((edge, i) => {
-                const start = getNodePos(edge.source);
-                const end = getNodePos(edge.target);
+                {/* Draw Computed Route */}
+                {routeData && (() => {
+                    try {
+                        let path = [];
+                        if (routeData.geometry && Array.isArray(routeData.geometry) && routeData.geometry.length > 0) {
+                            path = routeData.geometry;
+                        }
 
-                // Color based on congestion
-                const load = edge.current_flow / edge.capacity;
-                let color = '#94a3b8'; // Lighter slate for better visibility on dark map
-                let weight = 2;
+                        if (path.length > 0) {
+                            return (
+                                <>
+                                    <Polyline
+                                        path={path}
+                                        options={{
+                                            strokeColor: '#10b981',
+                                            strokeOpacity: 1.0,
+                                            strokeWeight: 6,
+                                            zIndex: 100
+                                        }}
+                                    />
+                                    {/* Start Marker */}
+                                    {path[0] && <Marker position={path[0]} title="Start" />}
+                                    {/* End Marker */}
+                                    {path[path.length - 1] && <Marker position={path[path.length - 1]} title="End" />}
+                                </>
+                            );
+                        }
+                    } catch (e) {
+                        console.error("Error rendering route:", e);
+                    }
+                    return null;
+                })()}
 
-                if (load > 0.8) { color = '#ef4444'; weight = 4; } // Red
-                else if (load > 0.5) { color = '#f59e0b'; weight = 3; } // Orange
-
-                return <Polyline key={i} positions={[start, end]} pathOptions={{ color, weight, opacity: 0.8 }} />
-            })}
-
-            {/* Draw Nodes */}
-            {graph.nodes.map(node => (
-                <CircleMarker
-                    key={node.id}
-                    center={getLatLng(node.x, node.y)}
-                    radius={4}
-                    pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 1 }}
-                >
-                    <Popup>{node.id}</Popup>
-                </CircleMarker>
-            ))}
-
-            {/* Draw Computed Route */}
-            {routeData && (
-                <Polyline
-                    positions={routeData.path.map(nodeId => getNodePos(nodeId))}
-                    pathOptions={{ color: '#10b981', weight: 6, opacity: 0.9, dashArray: '10, 10' }} // Green dashed
-                />
-            )}
-        </MapContainer>
-    )
+            </Map>
+        </div>
+    );
 }

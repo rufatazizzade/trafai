@@ -25,7 +25,8 @@ class RoadNetwork:
                          accessibility: float = 1.0,
                          social_sensitivity: float = 0.0,
                          emission_coeff: float = 1.0,
-                         capacity: float = 100.0) -> None:
+                         capacity: float = 100.0,
+                         geometry: Optional[List[Tuple[float, float]]] = None) -> None:
         """
         Adds a directed road segment (edge) between nodes u and v.
         """
@@ -42,7 +43,8 @@ class RoadNetwork:
                             epsilon=emission_coeff,
                             capacity=capacity,
                             free_flow_time=free_flow_time,
-                            current_flow=0.0)
+                            current_flow=0.0,
+                            geometry=geometry)
 
     def get_edge_data(self, u: str, v: str) -> Dict:
         """Returns attributes of the edge u->v."""
@@ -126,10 +128,25 @@ class RoadNetwork:
             
             capacity = lanes * 1000.0 # Rough capacity estimation
 
+            # Extract Geometry if available
+            geometry = None
+            if 'geometry' in data:
+                # Convert Shapely LineString to list of (lon, lat) tuples
+                # Note: valid JSON response usually wants (lat, lon) eventually, 
+                # but we store as (x, y) = (lon, lat) for consistency with nodes.
+                # However, Google Maps expects (lat, lng). Let's store as is and convert later.
+                try:
+                    linestring = data['geometry']
+                    # mapping: (x, y) -> (lon, lat)
+                    geometry = list(linestring.coords)
+                except:
+                    pass
+
             # Default attributes
             self.add_road_segment(
                 u, v, 
                 distance=distance_km,
                 speed_limit=speed_limit,
-                capacity=capacity
+                capacity=capacity,
+                geometry=geometry
             )

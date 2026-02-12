@@ -4,8 +4,23 @@ import { BarChart2, DollarSign, Cloud, Users, Clock } from 'lucide-react'
 export default function StatsPanel({ data }) {
     if (!data) return null;
 
-    const { total_cost, breakdown, path } = data;
-    const { time_cost, congestion_penalty, emission_cost, social_cost, travel_time_hours } = breakdown;
+    const { stats, path_nodes } = data;
+
+    // Support both new (Google) and old (Local) formats
+    // Google format: stats has all fields directly
+    // Local format: stats might have nested breakdown (though we removed local engine)
+
+    const {
+        total_cost = 0,
+        time_cost = 0,
+        congestion_penalty = 0,
+        emission_cost = 0,
+        social_cost = 0,
+        travel_time_hours = 0
+    } = stats || {};
+
+    // Safety check just in case stats is missing
+    if (!stats) return null;
 
     // Normalize for bars (simple percentage of total cost)
     const getPercent = (val) => Math.min(100, Math.max(5, (val / total_cost) * 100));
@@ -36,7 +51,11 @@ export default function StatsPanel({ data }) {
             </div>
 
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                Path: {path.join(' → ')}
+                {path_nodes && path_nodes.length > 0 ? (
+                    <>Path Nodes: {path_nodes.length}</>
+                ) : (
+                    <>Google Maps Route</>
+                )}
             </div>
         </div>
     )

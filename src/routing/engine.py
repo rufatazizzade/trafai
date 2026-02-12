@@ -64,12 +64,33 @@ class RoutingEngine:
                     'cost': cost, 
                     'components': comps
                 })
+
+            # Construct full geometry
+            full_geometry = []
+            # Add start node
+            if path:
+                start_node_data = self.network.graph.nodes[path[0]]
+                # Network stores (x, y) = (lon, lat)
+                full_geometry.append({'lat': start_node_data['y'], 'lng': start_node_data['x']})
+
+            for i in range(len(path) - 1):
+                u, v = path[i], path[i+1]
+                edge_data = self.network.graph[u][v]
+                if 'geometry' in edge_data and edge_data['geometry']:
+                    # OSMnx geometry is usually (lon, lat) tuples
+                    for lon, lat in edge_data['geometry']:
+                         full_geometry.append({'lat': lat, 'lng': lon})
+                else:
+                    # Fallback to end node if no geometry
+                    end_node_data = self.network.graph.nodes[v]
+                    full_geometry.append({'lat': end_node_data['y'], 'lng': end_node_data['x']})
                 
             return {
                 'path': path,
                 'total_cost': total_j,
                 'breakdown': components_sum,
-                'segments': path_details
+                'segments': path_details,
+                'geometry': full_geometry
             }
             
         except nx.NetworkXNoPath:
